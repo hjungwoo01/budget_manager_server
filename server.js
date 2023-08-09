@@ -1,29 +1,36 @@
+require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
 const app = express();
 const PORT = 3000;
 
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(cors());
 
-const MONGODB_URI = 'mongodb+srv://hjw1129:Server7*9)@cluster0.f262khh.mongodb.net/';
+const MONGODB_URI = process.env.MONGODB_URI;
 mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 const db = mongoose.connection;
-db.on('error', (err) => {
-  console.error('MongoDB connection error:', err);
+db.on('error', console.error.bind(console, 'MongoDB connection error:'));
+db.once('open', () => {
+  console.log('Connected to MongoDB successfully!');
 });
 
 const savingSchema = new mongoose.Schema({
   title: String,
   amount: Number,
+  date: { type: Date, default: Date.now },
+  category: String,
+  repeat: Boolean,
+  repeatInterval: String,
+  repeatDuration: { type: Date, default: Date.now },
 });
 
 const Saving = mongoose.model('Saving', savingSchema);
 
-app.get('/api/savings', async (req, res) => {
+// Read all savings
+app.get('/api/savings/read', async (req, res) => {
   try {
     const savings = await Saving.find();
     res.json(savings);
@@ -32,41 +39,86 @@ app.get('/api/savings', async (req, res) => {
   }
 });
 
-app.post('/api/savings', async (req, res) => {
+// Read by date interval "GET /api/savings/read/date-interval?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD"
+app.get('/api/savings/read/date-interval', async (req, res) => {
   try {
-    const { title, amount } = req.body;
+    const startDate = new Date(req.query.startDate);
+    const endDate = new Date(req.query.endDate);
 
-    if (!title || typeof amount !== 'number' || isNaN(amount)) {
+    if (isNaN(startDate) || isNaN(endDate)) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const filter = startDate.toISOString() === endDate.toISOString() ? 
+      { date: startDate } : 
+      { date: { $gte: startDate, $lte: endDate } };
+
+    const savings = await Saving.find(filter);
+    res.json(savings);
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching savings by date interval' });
+  }
+});
+
+// Read by category
+app.get('/api/savings/read/category/:category', async (req, res) => {
+  try {
+    const category = req.params.category;
+    const savings = await Saving.find({ category: category });
+    res.json(savings);
+  } catch (err) {
+    res.status(500).json({ error: 'Error fetching savings by category' });
+  }
+});
+
+app.post('/api/savings/save', async (req, res) => {
+  try {
+    const { title, amount, date, category, repeat, repeatInterval, repeatDuration } = req.body;
+
+    if (!title || typeof amount !== 'number' || isNaN(amount) || typeof repeat !== 'boolean') {
       return res.status(400).json({ error: 'Invalid data provided' });
     }
 
-    const saving = new Saving({ title, amount });
-
-    await saving.save((err, savedSaving) => {
-      if (err) {
-        console.error('Error saving to the database:', err);
-        return res.status(500).json({ error: 'Error creating saving' });
-      }
-      res.status(201).json(savedSaving);
+    const saving = new Saving({
+      title,
+      amount,
+      date,
+      category,
+      repeat,
+      repeatInterval,
+      repeatDuration,
     });
+
+    const savedSaving = await saving.save();
+    res.status(201).json(savedSaving);
+
   } catch (err) {
     console.error('Error creating saving:', err);
     res.status(500).json({ error: 'Error creating saving' });
   }
 });
 
-app.put('/api/savings/:id', async (req, res) => {
+app.put('/api/savings/update/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, amount } = req.body;
-    const updatedSaving = await Saving.findByIdAndUpdate(id, { title, amount }, { new: true });
+    const { title, amount, date, category, repeat, repeatInterval, repeatDuration } = req.body;
+    const updatedSaving = await Saving.findByIdAndUpdate(
+      id,
+      { title, amount, date, category, repeat, repeatInterval, repeatDuration },
+      { new: true }
+    );
+
+    if (!updatedSaving) {
+      return res.status(404).json({ error: 'Saving not found' });
+    }
+
     res.json(updatedSaving);
   } catch (err) {
     res.status(500).json({ error: 'Error updating saving' });
   }
 });
 
-app.delete('/api/savings/:id', async (req, res) => {
+app.delete('/api/savings/delete/:id', async (req, res) => {
   try {
     const { id } = req.params;
     await Saving.findByIdAndRemove(id);
@@ -74,6 +126,11 @@ app.delete('/api/savings/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Error deleting saving' });
   }
+});
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).send({ error: 'An unexpected error occurred' });
 });
 
 app.listen(PORT, () => {
