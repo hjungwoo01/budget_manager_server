@@ -24,7 +24,7 @@ const savingSchema = new mongoose.Schema({
   category: String,
   repeat: Boolean,
   repeatInterval: String,
-  repeatDuration: { type: Date, default: Date.now },
+  repeatEndDate: { type: Date, default: Date.now },
 });
 
 const Saving = mongoose.model('Saving', savingSchema);
@@ -73,11 +73,7 @@ app.get('/api/savings/read/category/:category', async (req, res) => {
 
 app.post('/api/savings/save', async (req, res) => {
   try {
-    const { title, amount, date, category, repeat, repeatInterval, repeatDuration } = req.body;
-
-    if (!title || typeof amount !== 'number' || isNaN(amount) || typeof repeat !== 'boolean') {
-      return res.status(400).json({ error: 'Invalid data provided' });
-    }
+    const { title, amount, date, category, repeat, repeatInterval, repeatEndDate } = req.body;
 
     const saving = new Saving({
       title,
@@ -86,12 +82,11 @@ app.post('/api/savings/save', async (req, res) => {
       category,
       repeat,
       repeatInterval,
-      repeatDuration,
+      repeatEndDate,
     });
 
     const savedSaving = await saving.save();
     res.status(201).json(savedSaving);
-
   } catch (err) {
     console.error('Error creating saving:', err);
     res.status(500).json({ error: 'Error creating saving' });
@@ -101,10 +96,11 @@ app.post('/api/savings/save', async (req, res) => {
 app.put('/api/savings/update/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, amount, date, category, repeat, repeatInterval, repeatDuration } = req.body;
+    const { title, amount, date, category, repeat, repeatInterval, repeatEndDate } = req.body;
+
     const updatedSaving = await Saving.findByIdAndUpdate(
       id,
-      { title, amount, date, category, repeat, repeatInterval, repeatDuration },
+      { title, amount, date, category, repeat, repeatInterval, repeatEndDate },
       { new: true }
     );
 
